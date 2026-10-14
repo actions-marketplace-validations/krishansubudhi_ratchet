@@ -1,14 +1,14 @@
 # Copyright 2026 Krishan Subudhi
 # SPDX-License-Identifier: Apache-2.0
-"""The two files ratchet keeps: `.ratchet.json` (policy and ceilings; JSON
-because ratchet must write it) and `.ratchet-grants.jsonl` (append-only log
-of every human allowance, one JSON object per line)."""
+"""The two files ratchet keeps: `.ratchet.json` (policy and ceilings) and
+`.ratchet-grants.jsonl` (append-only log of every human allowance)."""
 
 from __future__ import annotations
 
 import datetime
 import json
 import os
+import pathlib
 from typing import Any
 
 from . import measure
@@ -25,14 +25,10 @@ class ConfigError(Exception):
 
 def find_root(start: str) -> str:
     """Nearest dir at/above `start` with a config, else git top, else start."""
-    here = os.path.abspath(start)
-    while True:
-        if os.path.isfile(os.path.join(here, CONFIG)):
-            return here
-        up = os.path.dirname(here)
-        if up == here:
-            break
-        here = up
+    here = pathlib.Path(os.path.abspath(start))
+    for d in (here, *here.parents):
+        if (d / CONFIG).is_file():
+            return str(d)
     if measure.is_git(start):
         return measure.git(start, "rev-parse", "--show-toplevel").strip()
     return os.path.abspath(start)
@@ -45,10 +41,9 @@ def parse(text: str, where: str = CONFIG) -> dict[str, Any]:
         raise ConfigError("%s is not valid JSON: %s" % (where, exc)) from exc
     if not isinstance(cfg, dict) or not isinstance(cfg.get("groups"), dict):
         raise ConfigError("%s has no \"groups\" table" % where)
-    cfg.setdefault("max_file_lines", DEFAULT_MAX_FILE_LINES)
-    cfg.setdefault("slack", 0)
-    cfg.setdefault("ceilings", {})
-    cfg.setdefault("file_ceilings", {})
+    for key, val in (("max_file_lines", DEFAULT_MAX_FILE_LINES), ("slack", 0),
+                     ("ceilings", {}), ("file_ceilings", {})):
+        cfg.setdefault(key, val)
     for group in cfg["groups"]:
         if group not in cfg["ceilings"]:
             raise ConfigError("%s: group %r has no ceiling; add one in .ratchet.json "
@@ -72,9 +67,8 @@ def save(root: str, cfg: dict[str, Any]) -> None:
 
 
 def default_groups(paths: list[str]) -> dict[str, dict[str, list[str]]]:
-    """Source is every code file that is not a test; tests are code files in
-    the usual test locations. Only extensions actually present are listed,
-    so data files, docs and fixtures never count."""
+    """Source is every non-test code file; tests sit in the usual test
+    locations. Only extensions present are listed, so data and docs never count."""
     exts = sorted({os.path.splitext(p)[1].lower() for p in paths}
                   & measure.CODE_EXTS) or [".py"]
     return {

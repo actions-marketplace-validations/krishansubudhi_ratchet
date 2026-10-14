@@ -9,8 +9,6 @@ from ratchet.cli import AGENT_ENV
 
 
 class Repo:
-    """A throwaway git repo with helpers for writing code and committing."""
-
     def __init__(self, path):
         self.path = str(path)
         self.git("init", "-q")
@@ -42,7 +40,6 @@ class Repo:
 
 
 def funcs(count, prefix="f"):
-    """`count` two-line functions: 2*count non-blank lines."""
     return "".join("def %s%d():\n    return %d\n\n" % (prefix, i, i)
                    for i in range(count))
 

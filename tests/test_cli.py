@@ -60,9 +60,8 @@ def test_check_json(repo, capsys):
     capsys.readouterr()
     assert run(repo, "check", "--json") == 1
     data = json.loads(capsys.readouterr().out)
-    assert data["ok"] is False
-    assert data["violations"][0]["kind"] == "budget"
-    assert data["violations"][0]["over"] == 1
+    assert (data["ok"], data["violations"][0]["kind"], data["violations"][0]["over"]
+            ) == (False, "budget", 1)
     assert data["grew"]["source"] == [{"path": "src/new.py", "lines": 1}]
 
 
@@ -71,11 +70,9 @@ def test_split_suggests_seams(repo, capsys):
     repo.commit()
     repo.append("src/app.py", "def extra():\n    return 0\n")
     run(repo, "grant", "+2", "--reason", "r", "--by", "h")
-    capsys.readouterr()
     assert run(repo, "check") == 1
     out = capsys.readouterr().out
-    assert "src/app.py is 2 lines past its limit (102 / 100)" in out
-    assert "seams near the middle: line" in out
+    assert "src/app.py is 2 lines past its limit (102 / 100)" in out and "seams near the middle: line" in out
 
 
 def test_shrink_passes_and_tighten_banks_it(repo, capsys):
@@ -182,7 +179,6 @@ def test_hook_mode_blocks_with_exit_2_then_lets_go(repo):
 def test_budget_shows_totals_remaining_and_is_always_ok(repo, capsys):
     run(repo, "init")
     repo.commit()
-    capsys.readouterr()
     assert run(repo, "budget") == 0
     out = capsys.readouterr().out
     assert "source 101/101 (0 left)" in out and "tests 10/10 (0 left)" in out
@@ -190,9 +186,7 @@ def test_budget_shows_totals_remaining_and_is_always_ok(repo, capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["groups"]["source"] == {"lines": 101, "ceiling": 101, "remaining": 0} \
         and data["over"] == {}
-    # budget never refuses -- it's a report, not a gate, even over budget.
-    repo.append("src/util.py", "Y = 2\n")
-    capsys.readouterr()
+    repo.append("src/util.py", "Y = 2\n")   # over budget: still a report, not a gate
     assert run(repo, "budget") == 0
     assert "source 102/101 (-1 left)" in capsys.readouterr().out
 
@@ -200,7 +194,6 @@ def test_budget_shows_totals_remaining_and_is_always_ok(repo, capsys):
 def test_budget_lists_files_near_the_per_file_cap(repo, capsys):
     run(repo, "init", "--max-file-lines", "110")
     repo.commit()
-    capsys.readouterr()
     assert run(repo, "budget") == 0
     out = capsys.readouterr().out
     assert "near the per-file cap:" in out and "src/app.py is 100/110 (10 left)" in out
@@ -213,10 +206,21 @@ def test_budget_hook_warns_only_once_headroom_goes_negative(repo, capsys):
     assert run(repo, "budget", "--hook") == 0 and capsys.readouterr().err == ""
     repo.append("src/util.py", "Y = 2\nZ = 3\n")
     assert run(repo, "budget", "--hook") == 2
-    err = capsys.readouterr().err
-    assert "over budget mid-edit" in err and "source +2" in err
+    assert "over budget mid-edit -- source +2" in capsys.readouterr().err
 
 
 def test_budget_hook_never_blocks_on_a_missing_config(tmp_path, capsys):
     assert main(["-C", str(tmp_path), "budget", "--hook"]) == 0
     assert capsys.readouterr().err == ""
+
+
+def test_badge_writes_shields_json_and_prints_markdown(repo, capsys):
+    repo.write("src/big.py", funcs(600))
+    run(repo, "init")
+    run(repo, "badge")
+    assert json.loads(repo.read(".ratchet/badge.json")) == {
+        "schemaVersion": 1, "label": "code size", "color": "blue", "message": "1,301 lines"}
+    assert run(repo, "badge", "--out", "x/b.json") == 0 and "1,301" in repo.read("x/b.json")
+    repo.git("remote", "add", "origin", "git@github.com:me/proj.git")
+    assert run(repo, "badge", "--print-markdown") == 0
+    assert "raw.githubusercontent.com/me/proj/main/.ratchet/badge.json" in capsys.readouterr().out

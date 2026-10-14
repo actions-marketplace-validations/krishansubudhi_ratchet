@@ -1,15 +1,9 @@
 # Copyright 2026 Krishan Subudhi
 # SPDX-License-Identifier: Apache-2.0
-"""The rules. Pure functions over measurements and configs: no I/O here,
-so every rule is testable with plain dicts.
-
-1. budget  -- a group's total may not exceed its ceiling.
-2. seams   -- a file may not exceed the per-file limit; split it.
-3. grants  -- under --base, any ceiling higher than the base's must be paid
-              for by grant entries appended since the base, and the grants
-              log itself may only be appended to.
-4. tighten -- ceilings only move down, to what the code measures now.
-"""
+"""The rules, pure functions over measurements and configs (no I/O): budget
+(group total <= ceiling), file size (<= per-file limit), grants (under --base a
+raised ceiling must be paid for by appended grants), tighten (ceilings only
+move down)."""
 
 from __future__ import annotations
 
@@ -82,9 +76,8 @@ def rule_file_size(cfg: Mapping[str, Any], sizes: Sizes,
 
 def near_files(cfg: Mapping[str, Any], sizes: Sizes, headroom: float = 0.1
               ) -> list[tuple[str, int, int]]:
-    """(path, lines, cap) for files within `headroom` (10% by default) of
-    their per-file cap, or already over it. Most urgent -- least remaining,
-    negative first -- sorts first."""
+    """(path, lines, cap) for files within `headroom` of their per-file cap
+    or over it, least remaining first."""
     out = []
     for files in sizes.values():
         for path, lines in files.items():
@@ -95,8 +88,7 @@ def near_files(cfg: Mapping[str, Any], sizes: Sizes, headroom: float = 0.1
 
 
 def limits_of(cfg: Mapping[str, Any]) -> dict[str, int]:
-    """Every number that caps growth, flattened: groups by name, files as
-    `file:PATH`, and the per-file limit itself."""
+    """Every cap, flattened: groups, `file:PATH`, and `max_file_lines`."""
     out = {g: int(c) for g, c in cfg["ceilings"].items()}
     out.update({"file:" + p: int(c) for p, c in cfg["file_ceilings"].items()})
     out["max_file_lines"] = int(cfg["max_file_lines"])
@@ -112,17 +104,17 @@ def granted(grants: Sequence[Mapping[str, Any]]) -> dict[str, int]:
 
 def allowed(base: Mapping[str, Any], new_grants: Sequence[Mapping[str, Any]]
             ) -> dict[str, int]:
-    """What each limit may be at most: the base's value plus what humans
-    granted since. A file with no recorded ceiling at the base was capped by
-    the base's per-file limit."""
+    """Each limit's maximum: the base's value plus what humans granted since."""
     was = limits_of(base)
     out = dict(was)
     for target, lines in granted(new_grants).items():
-        start = was.get(target)
-        if start is None:
-            start = was["max_file_lines"] if target.startswith("file:") else 0
-        out[target] = start + lines
+        out[target] = _was(was, target) + lines
     return out
+
+
+def _was(limits: Mapping[str, int], target: str) -> int:
+    default = limits["max_file_lines"] if target.startswith("file:") else 0
+    return limits.get(target, default)
 
 
 def rule_unpaid_raise(cfg: Mapping[str, Any], base: Mapping[str, Any],
@@ -131,9 +123,7 @@ def rule_unpaid_raise(cfg: Mapping[str, Any], base: Mapping[str, Any],
     cap = allowed(base, new_grants)
     out = []
     for target, value in limits_of(cfg).items():
-        most = cap.get(target)
-        if most is None:
-            most = cap["max_file_lines"] if target.startswith("file:") else 0
+        most = _was(cap, target)
         if value <= most:
             continue
         out.append(Violation(
@@ -157,8 +147,7 @@ def rule_grants_log(base_log: Sequence[Mapping[str, Any]],
 
 def effective(cfg: Mapping[str, Any], base: Mapping[str, Any] | None,
               new_grants: Sequence[Mapping[str, Any]]) -> dict[str, int]:
-    """The limits a check holds the tree to: the config's own, and under
-    --base never more than the base plus new grants."""
+    """The config's limits, capped under --base at the base plus new grants."""
     mine = limits_of(cfg)
     if base is None:
         return mine
@@ -172,9 +161,8 @@ def check(cfg: Mapping[str, Any], sizes: Sizes,
           log: Sequence[Mapping[str, Any]] = ()) -> list[Violation]:
     new_grants = list(log[len(base_log):]) if base is not None else []
     caps = effective(cfg, base, new_grants)
-    files = {k[5:]: v for k, v in caps.items() if k.startswith("file:")}
     limit = caps["max_file_lines"]
-    limits = {p: files.get(p, limit)
+    limits = {p: caps.get("file:" + p, limit)
               for group in sizes.values() for p in group}
     out = rule_budget(cfg, sizes, caps) + rule_file_size(cfg, sizes, limits)
     if base is not None:
@@ -184,9 +172,8 @@ def check(cfg: Mapping[str, Any], sizes: Sizes,
 
 
 def tighten(cfg: Mapping[str, Any], sizes: Sizes) -> tuple[dict[str, Any], list[str]]:
-    """The ratchet: every ceiling drops to what the code measures now (plus
-    slack), and never rises. Recorded file ceilings drop the same way, and
-    disappear once the file is back under the per-file limit or gone."""
+    """Every ceiling drops to what the code measures now (plus slack), never
+    rises; recorded file ceilings go once the file is under the limit or gone."""
     new = dict(cfg, ceilings=dict(cfg["ceilings"]), file_ceilings={})
     notes = []
     slack = int(cfg.get("slack", 0))

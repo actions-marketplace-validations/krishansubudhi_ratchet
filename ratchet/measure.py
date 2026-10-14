@@ -30,8 +30,7 @@ SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", "venv", ".venv", "env",
 
 @lru_cache(maxsize=512)
 def _regex(glob: str) -> re.Pattern[str]:
-    """A gitignore-flavoured glob: `**/` is zero or more directories, `*`
-    stays inside one path segment, `?` is one character."""
+    """A gitignore-style glob: `**/` is any directories, `*` stays in a segment."""
     out, i = "", 0
     while i < len(glob):
         if glob.startswith("**/", i):
@@ -64,8 +63,7 @@ def is_git(root: str) -> bool:
 
 
 def list_files(root: str) -> list[str]:
-    """Every file a reviewer would see: tracked plus untracked-but-not-ignored
-    under git, otherwise a walk that skips the usual generated directories."""
+    """Tracked plus untracked-not-ignored files under git, else a filtered walk."""
     if is_git(root):
         out = git(root, "ls-files", "-z", "--cached", "--others",
                   "--exclude-standard")
@@ -81,8 +79,7 @@ def list_files(root: str) -> list[str]:
 
 
 def count_text(data: bytes) -> int:
-    """Non-blank lines. Blank lines are free, so nobody games the budget by
-    deleting whitespace or pays for a formatter's taste. Binary counts zero."""
+    """Non-blank lines (blank ones are free); binary counts zero."""
     if b"\0" in data[:8192]:
         return 0
     return sum(1 for line in data.decode("utf-8", "replace").splitlines()
@@ -99,8 +96,8 @@ def count_file(root: str, path: str) -> int:
 
 def classify(paths: Iterable[str], groups: Mapping[str, Mapping[str, list[str]]]
              ) -> dict[str, str]:
-    """path -> group: the first group, in config order, whose `extensions`
-    (if given) and `include` globs match and whose `exclude` globs do not."""
+    """path -> the first group (config order) whose extensions and `include`
+    match and `exclude` does not."""
     out = {}
     for path in paths:
         for name, spec in groups.items():
@@ -124,8 +121,7 @@ def measure(root: str, groups: Mapping[str, Mapping[str, list[str]]]
 
 
 def changed_since(root: str, ref: str) -> dict[str, int]:
-    """path -> line count at `ref`, for every path that differs from it in
-    the working tree (new files map to 0). Empty outside git."""
+    """path -> line count at `ref` for every path changed since (new: 0)."""
     if not is_git(root):
         return {}
     git(root, "rev-parse", "--verify", "--quiet", ref + "^{commit}")
@@ -133,16 +129,14 @@ def changed_since(root: str, ref: str) -> dict[str, int]:
     names += git(root, "ls-files", "-z", "--others", "--exclude-standard").split("\0")
     out = {}
     for path in {n for n in names if n}:
-        blob = subprocess.run(["git", "-C", root, "show", "%s:%s" % (ref, path)],
-                              capture_output=True, check=False)
-        out[path] = count_text(blob.stdout) if blob.returncode == 0 else 0
+        out[path] = count_text(show(root, ref, path) or b"")
     return out
 
 
-def show(root: str, ref: str, path: str) -> str | None:
+def show(root: str, ref: str, path: str) -> bytes | None:
     """A file's contents at `ref`, or None if it did not exist there."""
     done = subprocess.run(["git", "-C", root, "show", "%s:%s" % (ref, path)],
-                          capture_output=True, text=True, check=False)
+                          capture_output=True, check=False)
     return done.stdout if done.returncode == 0 else None
 
 
@@ -152,9 +146,8 @@ SEAM = re.compile(r"(?:export\s+)?(?:default\s+)?(?:pub(?:\(\w+\))?\s+)?"
 
 
 def seams(text: str) -> list[tuple[int, str]]:
-    """Top-level definitions, as (1-based line, label): the places a file can
-    be cut in two without cutting through anything. Decorators and attributes
-    directly above a definition move with it."""
+    """Top-level definitions as (1-based line, label): places to cut a file in
+    two. Decorators directly above a definition move with it."""
     lines = text.splitlines()
     out = []
     for i, line in enumerate(lines):
@@ -171,8 +164,7 @@ def seams(text: str) -> list[tuple[int, str]]:
 
 
 def best_seams(text: str, limit: int = 3) -> list[tuple[int, str]]:
-    """The seams nearest the middle: a cut there leaves two files of similar
-    size, both under the limit if any cut can."""
+    """The seams nearest the middle, where a cut leaves two similar halves."""
     found = seams(text)[1:]   # the first definition is not a cut
     middle = len(text.splitlines()) / 2
     return sorted(sorted(found, key=lambda s: abs(s[0] - middle))[:limit])

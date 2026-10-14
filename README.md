@@ -1,6 +1,6 @@
 # ratchet
 
-[![CI](https://github.com/krishansubudhi/ratchet/actions/workflows/ci.yml/badge.svg)](https://github.com/krishansubudhi/ratchet/actions/workflows/ci.yml)
+[![CI](https://github.com/krishansubudhi/ratchet/actions/workflows/ci.yml/badge.svg)](https://github.com/krishansubudhi/ratchet/actions/workflows/ci.yml) [![code size](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/krishansubudhi/ratchet/main/.ratchet/badge.json)](https://github.com/krishansubudhi/ratchet)
 
 **A code-size budget for your repo that only goes down.**
 
@@ -39,6 +39,10 @@ do. Your own commits are not blocked.
 
 **Strict mode (optional):** to block your own commits too, install the
 [git pre-commit hook](docs/integrations.md#strict-mode-the-git-hook).
+
+**Badge (optional):** `ratchet badge` writes `.ratchet/badge.json`; commit it
+(rerun to refresh) and paste the snippet from `ratchet badge --print-markdown`
+into your README.
 
 ## What a refusal looks like
 

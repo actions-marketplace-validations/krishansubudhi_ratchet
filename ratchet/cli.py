@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
 from typing import Any, Sequence
 
 from . import __version__, config, measure, rules
+from .badge import OUT, cmd_badge
 from .rules import n
 
 OK, REFUSED, ERROR = 0, 1, 2
@@ -143,10 +145,10 @@ def cmd_check(root: str, args: argparse.Namespace) -> int:
             raise config.ConfigError("--base %s is not a commit here (in CI, "
                                      "fetch full history)" % args.base) from None
         text = measure.show(root, args.base, config.CONFIG)
-        base = config.parse(text, "%s:%s" % (args.base, config.CONFIG)) \
+        base = config.parse(text.decode(), "%s:%s" % (args.base, config.CONFIG)) \
             if text is not None else None
-        base_log = config.parse_grants(measure.show(root, args.base,
-                                                    config.GRANTS) or "")
+        base_log = config.parse_grants((measure.show(
+            root, args.base, config.GRANTS) or b"").decode())
     violations = rules.check(cfg, sizes, base, base_log, log)
     for v in violations:
         if v.kind == "file-size":
@@ -202,21 +204,18 @@ def render_budget(data: dict[str, Any]) -> str:
 
 
 def cmd_budget(root: str, args: argparse.Namespace) -> int:
-    cfg = config.load(root)
-    data = _budget(root, cfg)
+    data = _budget(root, config.load(root))
     if args.json:
-        payload = dict(data, near_files=[
+        print(json.dumps(dict(data, near_files=[
             {"path": p, "lines": lines, "cap": cap}
-            for p, lines, cap in data["near_files"]])
-        print(json.dumps(payload, indent=2))
+            for p, lines, cap in data["near_files"]]), indent=2))
     else:
         print(render_budget(data))
     return OK
 
 
 def cmd_budget_hook(root: str, args: argparse.Namespace) -> int:
-    """PostToolUse meter: silent with headroom, one short warning once it
-    goes negative. Errors never block."""
+    """PostToolUse meter: silent with headroom, a warning once negative."""
     try:
         data = _budget(root, config.load(root))
     except (config.ConfigError, RuntimeError):
@@ -248,15 +247,12 @@ def cmd_hook(root: str, args: argparse.Namespace) -> int:
               "the human what grew and whether a grant is needed",
               file=sys.stderr)
         return OK
-    out = sys.stdout
-    sys.stdout = sys.stderr
     try:
-        code = cmd_check(root, args)
+        with contextlib.redirect_stdout(sys.stderr):
+            code = cmd_check(root, args)
     except (config.ConfigError, RuntimeError) as exc:
-        print("ratchet: error: %s" % exc)
+        print("ratchet: error: %s" % exc, file=sys.stderr)
         code = OK
-    finally:
-        sys.stdout = out
     return 2 if code == REFUSED else OK
 
 
@@ -354,13 +350,17 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--reason", required=True)
     s.add_argument("--by", help="default: git config user.name, else $USER")
 
+    s = sub.add_parser("badge", help="write a shields.io badge of the code size")
+    s.add_argument("--out", default=OUT, help="default: %s" % OUT)
+    s.add_argument("--print-markdown", action="store_true", help="print the README snippet")
+
     s = sub.add_parser("tighten", help="lower ceilings to what the code measures")
     s.add_argument("--dry-run", action="store_true")
     return p
 
 
 COMMANDS = {"init": cmd_init, "check": cmd_check, "budget": cmd_budget,
-            "grant": cmd_grant, "tighten": cmd_tighten}
+            "grant": cmd_grant, "tighten": cmd_tighten, "badge": cmd_badge}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
