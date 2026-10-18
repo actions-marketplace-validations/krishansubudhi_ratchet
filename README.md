@@ -10,6 +10,14 @@ A real run on [pallets/click](https://github.com/pallets/click); the bloated
 change is a scripted patch standing in for an agent. Full commands and output:
 [docs/examples.md](docs/examples.md).
 
+**Try it in 30 seconds** (nothing is enforced until you wire up a hook or CI):
+
+```sh
+pip install ratchet-size
+ratchet init      # records today's size as the ceiling
+ratchet check     # passes now; refuses once code grows past it
+```
+
 ## Why
 
 Coding agents are good at adding code and bad at deciding not to. Ratchet
@@ -36,6 +44,12 @@ instead of cutting code, declines "commit it", and commits once granted
 
 Only code files count, split into `source` and `tests` groups; docs never
 do. Your own commits are not blocked.
+
+**Gate pull requests (optional):** copy
+[`integrations/github/ratchet.yml`](integrations/github/ratchet.yml) to
+`.github/workflows/ratchet.yml`; it runs `uses: krishansubudhi/ratchet@v0`.
+Using it? Add the badge:
+`[![ratchet](https://img.shields.io/badge/code%20size-ratcheted-green)](https://github.com/krishansubudhi/ratchet)`
 
 **Strict mode (optional):** to block your own commits too, install the
 [git pre-commit hook](docs/integrations.md#strict-mode-the-git-hook).

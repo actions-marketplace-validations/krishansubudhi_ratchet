@@ -1,4 +1,4 @@
-name: ratchet
+name: ratchet code-size budget
 description: Refuse pull requests that grow the code past its budget, or raise the budget without a logged grant.
 branding:
   icon: trending-down
