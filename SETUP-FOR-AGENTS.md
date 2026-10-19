@@ -108,6 +108,9 @@ re-measures and only lowers ceilings) and show its output. Never re-run
 `ratchet init --force` to change the split or to get past a refusal: it
 re-baselines, absorbing any uncommitted growth, and resets the groups.
 
+Once the human has OK'd the split, commit `.ratchet.json`: CI and the hooks
+read the committed copy.
+
 ## 4. Wire up the agent(s)
 
 **Wire up the agent that is running this setup first** (you know which one
