@@ -20,45 +20,35 @@ OK, REFUSED, ERROR = 0, 1, 2
 
 
 def _union_merge(root: str) -> None:
-    line = config.GRANTS + " merge=union\n"
-    attr = os.path.join(root, ".gitattributes")
-    if os.path.exists(attr):
-        with open(attr, "r", encoding="utf-8") as fh:
-            lines = fh.readlines()
-        if any(l.strip() == line.strip() for l in lines):
-            return
+    line, attr = config.GRANTS + " merge=union", os.path.join(root, ".gitattributes")
+    if os.path.exists(attr) and line in [l.strip() for l in open(attr, encoding="utf-8")]:
+        return
     with open(attr, "a", encoding="utf-8") as fh:
-        fh.write(line)
+        fh.write(line + "\n")
     print("configured union merge for %s in .gitattributes" % config.GRANTS)
 
 
 def cmd_init(root: str, args: argparse.Namespace) -> int:
     exists = os.path.exists(os.path.join(root, config.CONFIG))
     if exists and not args.force:
-        print("%s already exists; use --force to rewrite it" % config.CONFIG,
-              file=sys.stderr)
+        print("%s already exists; use --force to rewrite it" % config.CONFIG, file=sys.stderr)
         return ERROR
     cfg = config.scaffold(root, args.max_file_lines, args.slack)
     ref = _default_ref(root) if exists else None
     if ref and measure.classify(measure.changed_since(root, ref), cfg["groups"]):
-        print("ratchet: uncommitted changes would be baked into the new ceilings"
-              "; commit or stash them first. To change groups/excludes, edit %s "
-              "and run `ratchet tighten`." % config.CONFIG, file=sys.stderr)
+        print("ratchet: uncommitted changes would be baked into the new ceilings; commit or stash them first. To change groups/excludes, edit %s and run `ratchet tighten`." % config.CONFIG, file=sys.stderr)
         return ERROR
     config.save(root, cfg)
     _union_merge(root)
     print("wrote %s" % config.CONFIG)
     for group, cap in cfg["ceilings"].items():
         print("  %-8s ceiling %s lines" % (group, n(cap)))
-    print("  per-file limit %s lines, %d file(s) already over it recorded "
-          "at their size" % (n(cfg["max_file_lines"]), len(cfg["file_ceilings"])))
-    print("next: commit %s, then run `ratchet check` before every commit"
-          % config.CONFIG)
+    print("  per-file limit %s lines, %d file(s) already over it recorded at their size" % (n(cfg["max_file_lines"]), len(cfg["file_ceilings"])))
+    print("next: commit %s, then run `ratchet check` before every commit" % config.CONFIG)
     return OK
 
 
-def _grew(root: str, ref: str | None, sizes: dict[str, dict[str, int]]
-          ) -> dict[str, list[tuple[str, int]]]:
+def _grew(root: str, ref: str | None, sizes: dict[str, dict[str, int]]) -> dict[str, list[tuple[str, int]]]:
     """group -> [(path, +lines)], biggest first, against `ref`."""
     if ref is None:
         return {}
@@ -66,12 +56,7 @@ def _grew(root: str, ref: str | None, sizes: dict[str, dict[str, int]]
         before = measure.changed_since(root, ref)
     except RuntimeError:
         return {}
-    out = {}
-    for group, files in sizes.items():
-        up = [(p, files[p] - before[p]) for p in files
-              if p in before and files[p] > before[p]]
-        out[group] = sorted(up, key=lambda x: -x[1])
-    return out
+    return {group: sorted([(p, files[p] - before[p]) for p in files if p in before and files[p] > before[p]], key=lambda x: -x[1]) for group, files in sizes.items()}
 
 
 def _default_ref(root: str) -> str | None:
