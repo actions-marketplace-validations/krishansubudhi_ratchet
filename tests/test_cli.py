@@ -28,6 +28,15 @@ def test_init_records_totals_and_oversized_files(repo, capsys):
     assert json.loads(repo.read(config.CONFIG))["ceilings"]["source"] == 706
 
 
+def test_init_configures_union_merge(repo, capsys):
+    assert run(repo, "init") == 0
+    assert repo.read(".gitattributes") == f"{config.GRANTS} merge=union\n"
+    assert "configured union merge" in capsys.readouterr().out
+    assert run(repo, "init", "--force") == 0
+    assert repo.read(".gitattributes") == f"{config.GRANTS} merge=union\n"
+    assert "configured union merge" not in capsys.readouterr().out
+
+
 def test_check_exit_codes_and_message(repo, capsys, monkeypatch):
     run(repo, "init")
     repo.commit()

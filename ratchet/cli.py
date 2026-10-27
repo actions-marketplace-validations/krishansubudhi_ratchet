@@ -19,6 +19,19 @@ from .rules import n
 OK, REFUSED, ERROR = 0, 1, 2
 
 
+def _union_merge(root: str) -> None:
+    line = config.GRANTS + " merge=union\n"
+    attr = os.path.join(root, ".gitattributes")
+    if os.path.exists(attr):
+        with open(attr, "r", encoding="utf-8") as fh:
+            lines = fh.readlines()
+        if any(l.strip() == line.strip() for l in lines):
+            return
+    with open(attr, "a", encoding="utf-8") as fh:
+        fh.write(line)
+    print("configured union merge for %s in .gitattributes" % config.GRANTS)
+
+
 def cmd_init(root: str, args: argparse.Namespace) -> int:
     exists = os.path.exists(os.path.join(root, config.CONFIG))
     if exists and not args.force:
@@ -33,6 +46,7 @@ def cmd_init(root: str, args: argparse.Namespace) -> int:
               "and run `ratchet tighten`." % config.CONFIG, file=sys.stderr)
         return ERROR
     config.save(root, cfg)
+    _union_merge(root)
     print("wrote %s" % config.CONFIG)
     for group, cap in cfg["ceilings"].items():
         print("  %-8s ceiling %s lines" % (group, n(cap)))
