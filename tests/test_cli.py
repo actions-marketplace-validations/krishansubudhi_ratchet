@@ -19,13 +19,12 @@ def run(repo, *args):
 def test_init_records_totals_and_oversized_files(repo, capsys):
     repo.write("src/pkg/big.py", funcs(300))   # 600 lines
     repo.write("testing/python/fixtures.py", funcs(10))   # pytest's layout: tests
-    assert run(repo, "init") == 0
+    assert run(repo, "init") == 0 and "configured union merge" in capsys.readouterr().out
+    assert repo.read(".gitattributes") == f"{config.GRANTS} merge=union\n"
     cfg = json.loads(repo.read(config.CONFIG))
-    assert cfg["ceilings"] == {"source": 701, "tests": 30}
-    assert cfg["file_ceilings"] == {"src/pkg/big.py": 600}
-    assert run(repo, "init") == 2   # no clobbering without --force
-    assert run(repo, "init", "--force", "--slack", "5") == 0
-    assert json.loads(repo.read(config.CONFIG))["ceilings"]["source"] == 706
+    assert cfg["ceilings"] == {"source": 701, "tests": 30} and cfg["file_ceilings"] == {"src/pkg/big.py": 600}
+    assert run(repo, "init") == 2 and run(repo, "init", "--force", "--slack", "5") == 0
+    assert "configured union merge" not in capsys.readouterr().out and json.loads(repo.read(config.CONFIG))["ceilings"]["source"] == 706
 
 
 def test_check_exit_codes_and_message(repo, capsys, monkeypatch):
